@@ -1,0 +1,184 @@
+# App server stack: frontend, 6 services, Postgres, Redis, Kafka+Zookeeper, and the log/metric agents.
+# Run:  cp .env.example .env && docker compose up -d --build
+name: shoplite
+
+x-service: &service
+  restart: unless-stopped
+  networks: [shoplite]
+  environment: &service-env
+    JWT_SECRET: ${JWT_SECRET}
+    DB_USER: shoplite
+    DB_PASSWORD: ${POSTGRES_PASSWORD}
+    KAFKA_BOOTSTRAP: kafka:29092
+    JAVA_OPTS: -Xmx256m
+  labels:
+    logging: promtail
+
+services:
+  # ---------------- edge ----------------
+  frontend:
+    build: ../frontend
+    image: shoplite/frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports: ["80:80"]
+    depends_on: [api-gateway]
+    networks: [shoplite]
+    labels: { logging: promtail }
+
+  api-gateway:
+    <<: *service
+    build: { context: ../services, args: { MODULE: api-gateway } }
+    image: shoplite/api-gateway:${IMAGE_TAG:-latest}
+    ports: ["8081:8080"]
+    environment:
+      <<: *service-env
+      USER_SERVICE_URL: http://user-service:8080
+      PRODUCT_SERVICE_URL: http://product-service:8080
+      ORDER_SERVICE_URL: http://order-service:8080
+      INVENTORY_SERVICE_URL: http://inventory-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
+    depends_on: [user-service, product-service, order-service]
+
+  # ---------------- services ----------------
+  user-service:
+    <<: *service
+    build: { context: ../services, args: { MODULE: user-service } }
+    image: shoplite/user-service:${IMAGE_TAG:-latest}
+    ports: ["8082:8080"]
+    environment:
+      <<: *service-env
+      DB_URL: jdbc:postgresql://postgres:5432/userdb
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  product-service:
+    <<: *service
+    build: { context: ../services, args: { MODULE: product-service } }
+    image: shoplite/product-service:${IMAGE_TAG:-latest}
+    ports: ["8083:8080"]
+    environment:
+      <<: *service-env
+      DB_URL: jdbc:postgresql://postgres:5432/productdb
+      REDIS_HOST: redis
+      SLOW_MS: ${SLOW_MS:-0}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+
+  order-service:
+    <<: *service
+    build: { context: ../services, args: { MODULE: order-service } }
+    image: shoplite/order-service:${IMAGE_TAG:-latest}
+    ports: ["8084:8080"]
+    environment:
+      <<: *service-env
+      DB_URL: jdbc:postgresql://postgres:5432/orderdb
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  inventory-service:
+    <<: *service
+    build: { context: ../services, args: { MODULE: inventory-service } }
+    image: shoplite/inventory-service:${IMAGE_TAG:-latest}
+    ports: ["8085:8080"]
+    environment:
+      <<: *service-env
+      DB_URL: jdbc:postgresql://postgres:5432/inventorydb
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  notification-service:
+    <<: *service
+    build: { context: ../services, args: { MODULE: notification-service } }
+    image: shoplite/notification-service:${IMAGE_TAG:-latest}
+    ports: ["8086:8080"]
+    depends_on:
+      kafka: { condition: service_healthy }
+
+  # ---------------- data ----------------
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shoplite
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shoplite"]
+      interval: 5s
+      retries: 10
+    networks: [shoplite]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    networks: [shoplite]
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_HEAP_OPTS: -Xmx256m -Xms128m
+    networks: [shoplite]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    restart: unless-stopped
+    depends_on: [zookeeper]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_HEAP_OPTS: -Xmx512m -Xms256m
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092 >/dev/null 2>&1"]
+      interval: 10s
+      retries: 12
+      start_period: 20s
+    networks: [shoplite]
+
+  # ---------------- agents (send data to the observability server) ----------------
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    pid: host
+    ports: ["9100:9100"]
+    volumes: ["/:/host:ro,rslave"]
+    command: ["--path.rootfs=/host"]
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    restart: unless-stopped
+    ports: ["8088:8080"]
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    restart: unless-stopped
+    environment:
+      LOKI_HOST: ${LOKI_HOST}
+    command: ["-config.file=/etc/promtail/promtail.yml", "-config.expand-env=true"]
+    volumes:
+      - ./promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+networks:
+  shoplite:
+
+volumes:
+  pgdata:

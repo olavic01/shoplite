@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: product-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/productdb}
+    username: ${DB_USER:shoplite}
+    password: ${DB_PASSWORD:shoplite}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+  cache:
+    type: redis
+    redis:
+      time-to-live: 60s
+      enable-statistics: true
+server:
+  port: 8080
+app:
+  slow-ms: ${SLOW_MS:0}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: product-service
+logging:
+  structured:
+    format:
+      console: ecs

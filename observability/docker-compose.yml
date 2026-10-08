@@ -1,0 +1,61 @@
+# Observability server stack. Run:  cp .env.example .env && docker compose up -d
+name: shoplite-obs
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    restart: unless-stopped
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus.yml.tmpl:/etc/prometheus/prometheus.yml.tmpl:ro
+      - ./alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+      - promdata:/prometheus
+    environment:
+      APP_HOST: ${APP_HOST}
+    entrypoint: ["/bin/sh","-c"]
+    command:
+      - |
+        sed "s/APP_HOST/$$APP_HOST/g" /etc/prometheus/prometheus.yml.tmpl > /tmp/prometheus.yml
+        exec /bin/prometheus --config.file=/tmp/prometheus.yml --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=7d --web.enable-lifecycle
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: unless-stopped
+    ports: ["9093:9093"]
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+
+  loki:
+    image: grafana/loki:3.0.0
+    restart: unless-stopped
+    ports: ["3100:3100"]
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./loki.yml:/etc/loki/loki.yml:ro
+      - lokidata:/loki
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    restart: unless-stopped
+    ports: ["3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    depends_on: [prometheus, loki]
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    pid: host
+    ports: ["9100:9100"]
+    volumes: ["/:/host:ro,rslave"]
+    command: ["--path.rootfs=/host"]
+
+volumes:
+  promdata:
+  lokidata:
+  grafanadata:

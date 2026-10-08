@@ -1,0 +1,105 @@
+<header class="bar">
+  <h1 class="brand">ShopLite</h1>
+  @if (session(); as s) {
+    <div class="who">
+      <span>{{ s.name }}</span>
+      <button class="link" type="button" (click)="signOut()">Sign out</button>
+    </div>
+  }
+</header>
+
+@if (toast(); as t) {
+  <div class="toast" [class.err]="t.kind === 'error'" role="status" aria-live="polite">{{ t.text }}</div>
+}
+
+<main class="layout">
+  <section class="catalog" aria-labelledby="catalog-h">
+    <h2 id="catalog-h">Desk gear</h2>
+
+    @if (loadError()) {
+      <p class="note err">{{ loadError() }} <button class="link" type="button" (click)="loadProducts()">Retry</button></p>
+    } @else if (products() === null) {
+      <p class="note">Loading products…</p>
+    } @else {
+      <ul class="rows">
+        @for (p of products(); track p.id) {
+          <li class="row">
+            <div class="head">
+              <h3>{{ p.name }}</h3>
+              <span class="leader" aria-hidden="true"></span>
+              <span class="price">{{ p.price | currency }}</span>
+            </div>
+            <p class="desc">{{ p.description }}</p>
+            <div class="foot">
+              @let st = stockLabel(p.id);
+              <span class="stock" [class.low]="st.level === 'low'" [class.out]="st.level === 'out'">{{ st.text }}</span>
+              <label class="qty">
+                <span class="sr">Quantity for {{ p.name }}</span>
+                <input type="number" min="1" max="99" [ngModel]="quantityFor(p.id)" (ngModelChange)="qty[p.id] = $event" />
+              </label>
+              <button class="primary" type="button" (click)="order(p)" [disabled]="ordering() === p.id || st.level === 'out'">
+                {{ ordering() === p.id ? 'Placing order…' : 'Place order' }}
+              </button>
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  </section>
+
+  <aside class="side">
+    @if (!session()) {
+      <section class="panel" aria-labelledby="auth-h">
+        <h2 id="auth-h">{{ mode() === 'login' ? 'Sign in' : 'Create an account' }}</h2>
+        <form (ngSubmit)="submitAuth()" #f="ngForm">
+          @if (mode() === 'register') {
+            <label>Name<input name="name" [(ngModel)]="form.name" required autocomplete="name" /></label>
+          }
+          <label>Email<input name="email" type="email" [(ngModel)]="form.email" required autocomplete="email" /></label>
+          <label>Password<input name="password" type="password" [(ngModel)]="form.password" required minlength="6"
+                 [attr.autocomplete]="mode() === 'login' ? 'current-password' : 'new-password'" /></label>
+          @if (formError()) { <p class="note err" role="alert">{{ formError() }}</p> }
+          <button class="primary wide" type="submit" [disabled]="busy() || f.invalid">
+            {{ busy() ? 'Please wait…' : mode() === 'login' ? 'Sign in' : 'Create account' }}
+          </button>
+        </form>
+        <p class="switch">
+          @if (mode() === 'login') {
+            No account? <button class="link" type="button" (click)="mode.set('register'); formError.set('')">Create one</button>
+          } @else {
+            Already registered? <button class="link" type="button" (click)="mode.set('login'); formError.set('')">Sign in</button>
+          }
+        </p>
+      </section>
+    } @else {
+      <section class="panel" aria-labelledby="orders-h">
+        <h2 id="orders-h">Your orders</h2>
+        @if (orders().length === 0) {
+          <p class="note">No orders yet. Place one from the list.</p>
+        } @else {
+          <ul class="plain">
+            @for (o of orders(); track o.id) {
+              <li>
+                <strong>#{{ o.id }}</strong> {{ o.quantity }} × {{ productName()[o.productId] || 'Product ' + o.productId }}
+                <span class="when">{{ o.createdAt | date: 'MMM d, HH:mm' }}</span>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+
+      <section class="panel" aria-labelledby="notes-h">
+        <h2 id="notes-h">Messages</h2>
+        @if (notes().length === 0) {
+          <p class="note">Order confirmations appear here a moment after you order.</p>
+        } @else {
+          <ul class="plain">
+            @for (n of notes(); track n.orderId) {
+              <li>{{ n.message }} <span class="when">{{ n.at | date: 'HH:mm:ss' }}</span></li>
+            }
+          </ul>
+        }
+      </section>
+    }
+  </aside>
+</main>

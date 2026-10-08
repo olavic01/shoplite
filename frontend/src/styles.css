@@ -1,0 +1,25 @@
+:root {
+  --paper: #f3f5f7;
+  --card: #ffffff;
+  --ink: #16202e;
+  --muted: #5b6676;
+  --line: #d5dbe3;
+  --blue: #2851e0;
+  --blue-dark: #1b3aa8;
+  --amber: #a85d00;
+  --amber-bg: #fff1d6;
+  --red: #b3261e;
+  --green: #1b7a46;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 17px/1.5 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }

@@ -1,0 +1,23 @@
+# Alerts are grouped and sent to a webhook. Replace the URL with Slack/Teams/email when you are ready.
+# Quick test receiver: create a free URL at https://webhook.site and paste it below.
+route:
+  receiver: default
+  group_by: [alertname, service]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [ 'severity="critical"' ]
+      receiver: default
+      repeat_interval: 1h
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: http://localhost:9999/alerts   # TODO replace with a real endpoint
+        send_resolved: true
+
+inhibit_rules:
+  - source_matchers: [ 'alertname="ServiceDown"' ]
+    target_matchers: [ 'alertname=~"HighErrorRate|SlowRequestsP95"' ]
+    equal: [service]

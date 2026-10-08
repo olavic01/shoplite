@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: user-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/userdb}
+    username: ${DB_USER:shoplite}
+    password: ${DB_PASSWORD:shoplite}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+server:
+  port: 8080
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: user-service
+logging:
+  structured:
+    format:
+      console: ecs
+jwt:
+  secret: ${JWT_SECRET:change-me-change-me-change-me-change-me}
